@@ -290,9 +290,25 @@ module Langchain::LLM
       messages = params[:messages] || []
       system_prompt = params[:system]
 
-      # Transform messages to Converse API format
+      # Extract system messages from the messages array
+      # Converse API expects system messages as the `system` parameter, not in messages
+      system_messages, non_system_messages = messages.partition { |msg| msg[:role] == "system" }
+
+      # Build system content blocks from system messages
+      system_blocks = []
+      system_messages.each do |msg|
+        content_blocks = normalize_message_content(msg[:content])
+        system_blocks.concat(content_blocks)
+      end
+
+      # If system_prompt is also provided as a parameter, add it
+      if system_prompt
+        system_blocks << {text: system_prompt}
+      end
+
+      # Transform non-system messages to Converse API format
       # Converse API expects messages with role and content array
-      converse_messages = messages.map do |msg|
+      converse_messages = non_system_messages.map do |msg|
         content = normalize_message_content(msg[:content])
         {
           role: msg[:role],
@@ -300,8 +316,8 @@ module Langchain::LLM
         }
       end
 
-      # Build system content blocks if system prompt is provided
-      system_blocks = system_prompt ? [{text: system_prompt}] : nil
+      # Set system blocks if any were found
+      system_blocks = system_blocks.any? ? system_blocks : nil
 
       # Build inference config
       inference_config = {}

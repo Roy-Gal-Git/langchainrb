@@ -152,5 +152,28 @@ RSpec.describe Langchain::Assistant::Messages::AnthropicMessage do
         )
       end
     end
+
+    context "when role is system" do
+      let(:role) { "system" }
+
+      it "returns system_hash" do
+        message = described_class.new(role: role, content: "You are a helpful assistant.")
+        expect(message).to receive(:system_hash).and_call_original
+        expect(message.to_hash).to eq(
+          role: role,
+          content: [
+            {
+              type: "text",
+              text: "You are a helpful assistant."
+            }
+          ]
+        )
+      end
+
+      it "returns true for system?" do
+        message = described_class.new(role: role, content: "You are a helpful assistant.")
+        expect(message.system?).to eq(true)
+      end
+    end
   end
 end

@@ -4,7 +4,7 @@
 
 For deep Rails integration see: [langchainrb_rails](https://github.com/patterns-ai-core/langchainrb_rails) gem.
 
-Available for paid consulting engagements! [Email me](mailto:andrei@sourcelabs.io).
+Originally created by Andrei Bondarev. Currently maintained by Roy Gal.
 
 ![Tests status](https://github.com/patterns-ai-core/langchainrb/actions/workflows/ci.yml/badge.svg?branch=main)
 [![Gem Version](https://badge.fury.io/rb/langchainrb.svg)](https://badge.fury.io/rb/langchainrb)
@@ -1053,9 +1053,13 @@ Join us in the [Langchain.rb](https://discord.gg/WDARp7J2n8) Discord server.
 
 [![Star History Chart](https://api.star-history.com/svg?repos=andreibondarev/langchainrb&type=Date)](https://star-history.com/#andreibondarev/langchainrb&Date)
 
+## Maintenance
+
+This project is currently maintained by Roy Gal. The original project by Andrei Bondarev is no longer actively maintained as of May 2025. This fork continues development and maintenance of the langchainrb gem.
+
 ## Contributing
 
-Bug reports and pull requests are welcome on GitHub at https://github.com/patterns-ai-core/langchainrb.
+Bug reports and pull requests are welcome on GitHub at https://github.com/Roy-Gal-Git/langchainrb.
 
 ## License
 

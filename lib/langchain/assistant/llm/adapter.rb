@@ -8,7 +8,7 @@ module Langchain
         def self.build(llm)
           if llm.is_a?(Langchain::LLM::Anthropic)
             LLM::Adapters::Anthropic.new
-          elsif llm.is_a?(Langchain::LLM::AwsBedrock) && llm.defaults[:chat_model].include?("anthropic")
+          elsif (llm.is_a?(Langchain::LLM::AwsBedrockConverse) || (llm.is_a?(Langchain::LLM::AwsBedrock)) && llm.defaults[:chat_model].include?("anthropic"))
             LLM::Adapters::AwsBedrockAnthropic.new
           elsif llm.is_a?(Langchain::LLM::GoogleGemini) || llm.is_a?(Langchain::LLM::GoogleVertexAI)
             LLM::Adapters::GoogleGemini.new

@@ -166,7 +166,386 @@ gemini_llm = Langchain::LLM::GoogleGemini.new(api_key: ENV["GOOGLE_GEMINI_API_KE
 
 # Using OpenAI
 openai_llm = Langchain::LLM::OpenAI.new(api_key: ENV["OPENAI_API_KEY"])
+
+# Using AWS Bedrock (Converse API for chat)
+bedrock_llm = Langchain::LLM::AwsBedrockConverse.new(
+  aws_client_options: { region: "us-east-1" }
+)
 ```
+
+## AWS Bedrock
+
+AWS Bedrock is supported through two classes, each using different AWS APIs:
+
+### AwsBedrock (InvokeModel API)
+
+Use `Langchain::LLM::AwsBedrock` for:
+- **Embeddings** (`embed` method)
+- **Prompt completions** (`complete` method)
+- **Legacy chat operations** (`chat` method using InvokeModel API)
+
+```ruby
+llm = Langchain::LLM::AwsBedrock.new(
+  aws_client_options: { region: "us-east-1" },
+  default_options: {
+    chat_model: "anthropic.claude-3-5-sonnet-20240620-v1:0",
+    completion_model: "anthropic.claude-v2:1",
+    embedding_model: "amazon.titan-embed-text-v1"
+  }
+)
+
+# Embeddings
+embedding = llm.embed(text: "Hello, world!")
+
+# Prompt completions
+completion = llm.complete(prompt: "Once upon a time")
+```
+
+### AwsBedrockConverse (Converse API) ⭐ Recommended for Chat
+
+Use `Langchain::LLM::AwsBedrockConverse` for:
+- **Chat operations** (`chat` method) - Recommended for new code
+- **Better system message handling**
+- **Native streaming support** with AWS SDK events
+- **Works seamlessly with `Langchain::Assistant`**
+
+**Requirements:**
+- `aws-sdk-bedrockruntime >= 1.68.0`
+
+```ruby
+llm = Langchain::LLM::AwsBedrockConverse.new(
+  aws_client_options: { region: "us-east-1" },
+  default_options: {
+    chat_model: "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    max_tokens_to_sample: 8000,
+    temperature: 1.0
+  }
+)
+
+# Chat completions
+messages = [
+  { role: "system", content: "You are a helpful assistant." },
+  { role: "user", content: "What's the weather like today?" }
+]
+response = llm.chat(messages: messages)
+```
+
+#### Streaming with AwsBedrockConverse
+
+When streaming, `AwsBedrockConverse` yields native AWS SDK event objects instead of JSON chunks. This provides type safety and better IDE support.
+
+**Basic streaming example:**
+```ruby
+llm.chat(messages: messages) do |event|
+  case event
+  when Aws::BedrockRuntime::Types::MessageStartEvent
+    # Message started - emitted at the beginning of each assistant message
+    # event.role contains the message role (typically "assistant")
+    
+  when Aws::BedrockRuntime::Types::ContentBlockStartEvent
+    # Content block started - can be text or tool_use
+    start = event.start.to_h
+    if start[:tool_use]
+      # Tool use block started
+      # Access tool_use properties as needed (structure may vary by model)
+      # Check start[:tool_use] for available fields
+    end
+    
+  when Aws::BedrockRuntime::Types::ContentBlockDeltaEvent
+    # Content delta received - streams text or tool_use input
+    delta = event.delta.to_h
+    
+    if delta[:text]
+      # Text content streaming - append to your output
+      print delta[:text]
+    elsif delta[:tool_use]
+      # Tool use input is streaming as JSON fragments
+      # The library accumulates these fragments automatically
+      # Access delta[:tool_use] for streaming tool input data
+      # The exact structure may vary - check delta[:tool_use] for available fields
+    end
+    
+  when Aws::BedrockRuntime::Types::ConverseStreamMetadataEvent
+    # Usage metadata may appear here (model-dependent)
+    # Using to_h ensures compatibility across SDK versions
+    usage = event.to_h[:usage]
+    if usage
+      input_tokens = usage.dig(:input_tokens)
+      output_tokens = usage.dig(:output_tokens)
+      # Handle intermediate usage statistics
+    end
+    # stop_reason may also appear here for some models
+    stop_reason = event.to_h[:stop_reason] if event.to_h.key?(:stop_reason)
+    
+  when Aws::BedrockRuntime::Types::MessageStopEvent
+    # Message complete - final event in the stream
+    stop_reason = event.stop_reason  # "end_turn", "max_tokens", "tool_use", etc.
+    
+    # Access usage safely using to_h (works across SDK versions)
+    usage = event.to_h[:usage]
+    if usage
+      input_tokens = usage.dig(:input_tokens)
+      output_tokens = usage.dig(:output_tokens)
+      total_tokens = (input_tokens || 0) + (output_tokens || 0)
+      # Final usage statistics available here
+    end
+  end
+end
+```
+
+**Complete example with error handling:**
+```ruby
+def stream_chat_response(llm, messages)
+  accumulated_text = ""
+  tool_calls = []
+  
+  begin
+    response = llm.chat(messages: messages) do |event|
+      case event
+      when Aws::BedrockRuntime::Types::ContentBlockDeltaEvent
+        delta = event.delta.to_h
+        if delta[:text]
+          text_chunk = delta[:text].to_s
+          accumulated_text += text_chunk
+          # Update UI or process chunk
+          yield text_chunk if block_given?
+        end
+        
+      when Aws::BedrockRuntime::Types::ContentBlockStartEvent
+        start = event.start.to_h
+        if start[:tool_use]
+          # Tool use block started
+          # Access tool_use properties as needed
+          # The exact structure may vary - check start[:tool_use] for available fields
+        end
+        
+      when Aws::BedrockRuntime::Types::MessageStopEvent
+        stop_reason = event.stop_reason
+        usage = event.to_h[:usage]
+        
+        # Handle completion
+        if stop_reason == "tool_use"
+          # Model wants to call tools - handle accordingly
+        elsif stop_reason == "end_turn"
+          # Normal completion
+        end
+      end
+    end
+    
+    # Return the final response
+    response
+  rescue Aws::BedrockRuntime::Errors::ServiceError => e
+    # Handle AWS service errors
+    Rails.logger.error "Bedrock error: #{e.message}"
+    raise
+  end
+end
+```
+
+**Key points about streaming events:**
+
+1. **Event order**: Events are received in a specific order: `MessageStartEvent` → `ContentBlockStartEvent` → `ContentBlockDeltaEvent` (multiple) → `ConverseStreamMetadataEvent` (optional) → `MessageStopEvent`
+2. **Safe property access**: Use `.to_h` and `.dig` for accessing nested properties to ensure compatibility across SDK versions
+3. **Tool use handling**: Tool use input streams as JSON fragments that are automatically accumulated by the library
+4. **Usage metadata**: May appear in `ConverseStreamMetadataEvent` or `MessageStopEvent` depending on the model
+5. **Stop reasons**: Common values include `"end_turn"`, `"max_tokens"`, `"tool_use"`, `"stop_sequence"`
+
+### References
+
+When working with AWS Bedrock, you may find these official AWS documentation resources helpful:
+
+- **[AWS SDK for Ruby v3 API](https://docs.aws.amazon.com/sdk-for-ruby/v3/api/Aws.html)**: Complete reference for the AWS SDK for Ruby, including the `Aws::BedrockRuntime::Client` class
+- **[AWS Bedrock API Reference](https://docs.aws.amazon.com/bedrock/latest/APIReference/welcome.html)**: Official API documentation for AWS Bedrock services
+- **[Converse API Documentation](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html)**: Specific documentation for the Converse API endpoint
+- **[ConverseStream API Documentation](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ConverseStream.html)**: Documentation for streaming responses with the Converse API
+
+### Migrating from AwsBedrock to AwsBedrockConverse
+
+If you're currently using `AwsBedrock#chat` and want to migrate to the Converse API:
+
+#### Why Migrate?
+
+The Converse API offers several advantages over the legacy InvokeModel API:
+
+- **Native message format**: Uses standard message objects instead of provider-specific JSON structures
+- **Better system message handling**: Automatically extracts and processes system messages from the messages array
+- **Type-safe streaming events**: Yields native AWS SDK event objects instead of raw JSON chunks
+- **Improved Assistant integration**: Works seamlessly with `Langchain::Assistant` and provides better tool support
+- **Future-proof**: AWS recommends using Converse API for new chat-based applications
+
+**When to use each API:**
+
+- **Use `AwsBedrockConverse`** for:
+  - New chat-based applications
+  - Applications using `Langchain::Assistant`
+  - Applications that need better system message handling
+  - Applications that benefit from type-safe streaming events
+
+- **Continue using `AwsBedrock`** for:
+  - Embeddings (`embed` method)
+  - Prompt completions (`complete` method)
+  - Legacy code that you're not ready to migrate
+  - Models that don't yet support the Converse API
+
+#### 1. Update your initialization
+
+**Before:**
+```ruby
+llm = Langchain::LLM::AwsBedrock.new(
+  aws_client_options: { region: "us-east-1" },
+  default_options: { chat_model: "anthropic.claude-3-5-sonnet-20240620-v1:0" }
+)
+```
+
+**After:**
+```ruby
+llm = Langchain::LLM::AwsBedrockConverse.new(
+  aws_client_options: { region: "us-east-1" },
+  default_options: { chat_model: "global.anthropic.claude-sonnet-4-5-20250929-v1:0" }
+)
+```
+
+#### 2. Update streaming event handling (if using streaming)
+
+The Converse API uses native AWS SDK event objects instead of JSON chunks. This provides type safety and better IDE support.
+
+**Before (InvokeModel API - JSON chunks):**
+```ruby
+llm.chat(messages: messages) do |chunk|
+  case chunk["type"]
+  when "message_delta"
+    stop_reason = chunk["delta"]&.[]("stop_reason")
+    if stop_reason == "tool_use"
+      # Tool use detected
+    end
+  when "content_block_start"
+    if chunk["content_block"] && chunk["content_block"]["type"] == "tool_use"
+      tool_name = chunk["content_block"]["name"]
+      # Handle tool call start
+    end
+  when "content_block_delta"
+    if chunk["delta"]["type"] == "text_delta"
+      print chunk["delta"]["text"]
+    end
+  when "message_stop"
+    # Access metrics from nested structure
+    metrics = chunk["amazon-bedrock-invocationMetrics"]
+    input_tokens = metrics&.[]("inputTokenCount")
+    output_tokens = metrics&.[]("outputTokenCount")
+  end
+end
+```
+
+**After (Converse API - Native SDK events):**
+```ruby
+llm.chat(messages: messages) do |event|
+  case event
+  when Aws::BedrockRuntime::Types::MessageStartEvent
+    # Message started - role available via event.role
+    # This event is emitted at the start of each assistant message
+    
+  when Aws::BedrockRuntime::Types::ContentBlockStartEvent
+    # Content block started (text or tool_use)
+    start = event.start.to_h
+    if start[:tool_use]
+      # Tool use block started
+      # Access tool_use properties as needed (structure may vary by model)
+      # Example: tool_name = start[:tool_use][:name]
+    end
+    
+  when Aws::BedrockRuntime::Types::ContentBlockDeltaEvent
+    # Content delta received - can be text or tool_use input
+    delta = event.delta.to_h
+    
+    if delta[:text]
+      # Text content streaming
+      print delta[:text]
+    elsif delta[:tool_use]
+      # Tool use input is streaming as JSON fragments
+      # The input will be accumulated and parsed when complete
+      # Access delta[:tool_use] for streaming tool input data
+      # The exact structure may vary - check delta[:tool_use] for available fields
+    end
+    
+  when Aws::BedrockRuntime::Types::ConverseStreamMetadataEvent
+    # Usage metadata may appear here (model-dependent)
+    # Using to_h ensures compatibility across SDK versions
+    usage = event.to_h[:usage]
+    if usage
+      input_tokens = usage.dig(:input_tokens)
+      output_tokens = usage.dig(:output_tokens)
+      # Handle usage metadata
+    end
+    # stop_reason may also appear here
+    stop_reason = event.to_h[:stop_reason] if event.to_h.key?(:stop_reason)
+    
+  when Aws::BedrockRuntime::Types::MessageStopEvent
+    # Message complete - final event in the stream
+    stop_reason = event.stop_reason
+    # Access usage safely using to_h (works across SDK versions)
+    usage = event.to_h[:usage]
+    if usage
+      input_tokens = usage.dig(:input_tokens)
+      output_tokens = usage.dig(:output_tokens)
+      # Final usage statistics available here
+    end
+  end
+end
+```
+
+**Key differences in event handling:**
+
+1. **Type safety**: Events are typed objects (`Aws::BedrockRuntime::Types::*`) instead of hash strings
+2. **Property access**: Use `.to_h` for safe property access across SDK versions
+3. **Event structure**: Events have consistent structure with typed properties
+4. **Usage metadata**: Access via `event.to_h[:usage]` for compatibility
+5. **Tool use handling**: Tool use events are more structured and easier to work with
+
+#### 3. Update model IDs (if needed)
+
+Model IDs may differ between APIs. The Converse API supports newer model formats:
+
+**InvokeModel format:**
+```ruby
+chat_model: "anthropic.claude-3-5-sonnet-20240620-v1:0"
+```
+
+**Converse API format:**
+```ruby
+chat_model: "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
+```
+
+Check the [AWS Bedrock model IDs documentation](https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html) for the correct model identifier for your use case.
+
+#### 4. Ensure your AWS SDK version
+
+The Converse API requires `aws-sdk-bedrockruntime >= 1.68.0`:
+
+```ruby
+# In your Gemfile
+gem "aws-sdk-bedrockruntime", ">= 1.68.0"
+```
+
+If you're using an older version, you'll get a clear error message indicating the version requirement.
+
+#### Key Differences
+
+| Feature | AwsBedrock (InvokeModel) | AwsBedrockConverse |
+|---------|-------------------------|-------------------|
+| **API Endpoint** | `invoke_model` / `invoke_model_with_response_stream` | `converse` / `converse_stream` |
+| **Chat Support** | ✅ (legacy format) | ✅ (native message format) |
+| **Embeddings** | ✅ | ❌ (use AwsBedrock) |
+| **Completions** | ✅ | ❌ (use AwsBedrock) |
+| **Streaming Events** | JSON hash chunks | Native AWS SDK event objects |
+| **System Messages** | Basic support | Enhanced support with automatic extraction |
+| **Assistant Integration** | ✅ | ✅ (recommended) |
+| **Event Types** | String-based (`"message_delta"`, etc.) | Typed classes (`MessageStartEvent`, etc.) |
+| **Usage Metadata** | Nested in `amazon-bedrock-invocationMetrics` | Direct access via `usage` property |
+| **Model ID Format** | `anthropic.claude-3-5-sonnet-20240620-v1:0` | `global.anthropic.claude-sonnet-4-5-20250929-v1:0` |
+| **SDK Version** | `>= 1.1` | `>= 1.68.0` |
+
+> [!TIP]
+> For new chat-based applications, prefer `AwsBedrockConverse`. Continue using `AwsBedrock` for embeddings and prompt completions, or if you need to support models that don't yet support the Converse API.
 
 ## Response Objects
 

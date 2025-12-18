@@ -20,12 +20,41 @@ module Langchain
             tool_choice:,
             parallel_tool_calls:
           )
-            params = {messages: messages}
+            # Extract system messages from messages array
+            system_messages, non_system_messages = messages.partition do |msg|
+              msg_role = msg.is_a?(Hash) ? (msg[:role] || msg["role"]) : msg.role
+              msg_role == "system"
+            end
+
+            # Build system content from system messages
+            # Prefer system messages from messages array over instructions parameter
+            system_content = []
+            if system_messages.any?
+              system_messages.each do |msg|
+                content = msg.is_a?(Hash) ? (msg[:content] || msg["content"]) : msg.content
+                if content.is_a?(String)
+                  system_content << content
+                elsif content.is_a?(Array)
+                  content.each do |item|
+                    if item.is_a?(Hash)
+                      system_content << (item[:text] || item["text"] || "")
+                    elsif item.is_a?(String)
+                      system_content << item
+                    end
+                  end
+                end
+              end
+            elsif instructions
+              # Only use instructions if no system messages were found
+              system_content = [instructions]
+            end
+
+            params = {messages: non_system_messages}
             if tools.any?
               params[:tools] = build_tools(tools)
               params[:tool_choice] = build_tool_choice(tool_choice, parallel_tool_calls)
             end
-            params[:system] = instructions if instructions
+            params[:system] = system_content.join("\n") if system_content.any?
             params
           end
 

@@ -9,6 +9,14 @@
 - [DOCS]: Documentation changes. No changes to the library's behavior.
 - [SECURITY]: A change which fixes a security vulnerability.
 
+## [0.20.0]
+- [FEATURE] Add `Langchain::LLM::AwsBedrockConverse` class for AWS Bedrock Converse API support. This new class uses the native Converse/ConverseStream APIs (`converse` and `converse_stream`) instead of the legacy InvokeModel API. Recommended for new chat-based applications using AWS Bedrock.
+- [FEATURE] `AwsBedrockConverse` supports native AWS SDK streaming events (`MessageStartEvent`, `ContentBlockStartEvent`, `ContentBlockDeltaEvent`, `ConverseStreamMetadataEvent`, `MessageStopEvent`) when streaming responses.
+- [FEATURE] Enhanced system message handling in `AwsBedrockConverse` - automatically extracts and processes system messages from the messages array.
+- [FEATURE] `Langchain::Assistant` now supports `AwsBedrockConverse` via the existing `AwsBedrockAnthropic` adapter.
+- [COMPAT] Require `aws-sdk-bedrockruntime >= 1.68.0` for Converse API support.
+- [DOCS] Add comprehensive AWS Bedrock documentation and migration guide in README.
+
 ## [0.19.5]
 - [BREAKING] [https://github.com/patterns-ai-core/langchainrb/pull/859] Add metadata support to PgVector storage
 - [BUGFIX] [https://github.com/patterns-ai-core/langchainrb/pull/939] Fix Langchain::Vectorsearch::Milvus initializer by passing :api_key

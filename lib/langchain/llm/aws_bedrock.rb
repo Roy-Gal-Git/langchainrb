@@ -133,12 +133,15 @@ module Langchain::LLM
         raise "Chat provider #{parameters[:model]} is not supported."
       end
 
+      # Build request body with proper system prompt handling
+      request_body = build_chat_request_body(parameters, parameters[:model])
+
       if block
         response_chunks = []
 
         client.invoke_model_with_response_stream(
           model_id: parameters[:model],
-          body: parameters.except(:model).to_json,
+          body: request_body.to_json,
           content_type: "application/json",
           accept: "application/json"
         ) do |stream|
@@ -154,7 +157,7 @@ module Langchain::LLM
       else
         response = client.invoke_model({
           model_id: parameters[:model],
-          body: parameters.except(:model).to_json,
+          body: request_body.to_json,
           content_type: "application/json",
           accept: "application/json"
         })
@@ -286,6 +289,61 @@ module Langchain::LLM
 
     def compose_parameters_anthropic(params)
       params.merge(anthropic_version: "bedrock-2023-05-31")
+    end
+
+    def build_chat_request_body(parameters, model_id)
+      # For Anthropic models, handle system prompts properly
+      if provider_name(model_id) == :anthropic
+        build_anthropic_chat_request_body(parameters)
+      else
+        # For other providers, pass through as-is
+        parameters.except(:model)
+      end
+    end
+
+    def build_anthropic_chat_request_body(parameters)
+      messages = Array(parameters[:messages])
+      system_param = parameters[:system]
+
+      # Extract system messages from messages array
+      system_messages, non_system_messages = messages.partition { |msg| msg[:role] == "system" || msg["role"] == "system" }
+
+      # Build system content from system messages
+      system_content = []
+      if system_messages.any?
+        system_messages.each do |msg|
+          content = msg[:content] || msg["content"]
+          if content.is_a?(String)
+            system_content << content
+          elsif content.is_a?(Array)
+            content.each do |item|
+              if item.is_a?(Hash)
+                system_content << (item[:text] || item["text"] || "")
+              elsif item.is_a?(String)
+                system_content << item
+              end
+            end
+          end
+        end
+      end
+
+      # Add system parameter if provided and no system messages found
+      if system_param && system_content.empty?
+        system_content << system_param
+      end
+
+      # Build request body in the order expected by tests: messages, stop_sequences, max_tokens, anthropic_version
+      body = {}
+      body[:messages] = non_system_messages
+      body[:stop_sequences] = parameters[:stop_sequences] if parameters[:stop_sequences] && !parameters[:stop_sequences].empty?
+      body[:max_tokens] = parameters[:max_tokens] if parameters[:max_tokens]
+      body[:anthropic_version] = parameters[:anthropic_version] || "bedrock-2023-05-31"
+      body[:system] = system_content.join("\n") if system_content.any?
+      body[:temperature] = parameters[:temperature] if parameters.key?(:temperature)
+      body[:top_p] = parameters[:top_p] if parameters.key?(:top_p)
+      body[:top_k] = parameters[:top_k] if parameters.key?(:top_k)
+
+      body
     end
 
     def response_from_chunks(chunks)

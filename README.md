@@ -6,10 +6,8 @@ For deep Rails integration see: [langchainrb_rails](https://github.com/patterns-
 
 Originally created by Andrei Bondarev. Currently maintained by Roy Gal.
 
-![Tests status](https://github.com/patterns-ai-core/langchainrb/actions/workflows/ci.yml/badge.svg?branch=main)
-[![Gem Version](https://badge.fury.io/rb/langchainrb.svg)](https://badge.fury.io/rb/langchainrb)
-[![Docs](http://img.shields.io/badge/yard-docs-blue.svg)](http://rubydoc.info/gems/langchainrb)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/patterns-ai-core/langchainrb/blob/main/LICENSE.txt)
+![Tests status](https://github.com/Roy-Gal-Git/langchainrb/actions/workflows/ci.yml/badge.svg?branch=main)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/Roy-Gal-Git/langchainrb/blob/main/LICENSE.txt)
 [![](https://dcbadge.vercel.app/api/server/WDARp7J2n8?compact=true&style=flat)](https://discord.gg/WDARp7J2n8)
 [![X](https://img.shields.io/twitter/url/https/twitter.com/cloudposse.svg?style=social&label=Follow%20%40rushing_andrei)](https://twitter.com/rushing_andrei)
 
@@ -35,15 +33,30 @@ Originally created by Andrei Bondarev. Currently maintained by Roy Gal.
 
 ## Installation
 
-Install the gem and add to the application's Gemfile by executing:
+This gem is not published to RubyGems. Install it directly from GitHub by adding it to your `Gemfile`:
 
-    bundle add langchainrb
+```ruby
+gem "langchainrb", git: "https://github.com/Roy-Gal-Git/langchainrb.git"
+```
 
-If bundler is not being used to manage dependencies, install the gem by executing:
+Or specify a specific branch, tag, or commit:
 
-    gem install langchainrb
+```ruby
+# Using a specific branch
+gem "langchainrb", git: "https://github.com/Roy-Gal-Git/langchainrb.git", branch: "main"
 
-Additional gems may be required. They're not included by default so you can include only what you need.
+# Using a specific tag
+gem "langchainrb", git: "https://github.com/Roy-Gal-Git/langchainrb.git", tag: "0.20.0"
+
+# Using a specific commit
+gem "langchainrb", git: "https://github.com/Roy-Gal-Git/langchainrb.git", ref: "abc1234"
+```
+
+Then run:
+
+    bundle install
+
+**Note:** Additional gems may be required. They're not included by default so you can include only what you need.
 
 ## Usage
 

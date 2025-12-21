@@ -222,13 +222,19 @@ module Langchain::LLM
     end
 
     def parse_converse_response(response, model_id)
-      output = response.output
+      # AWS Bedrock Converse API response structure: response.output.message contains role and content
+      # See: https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html
+      message = response.output.message
+
+      # AWS Bedrock Converse API doesn't return a message ID like Anthropic API does
+      # Generate a unique ID for compatibility with the AnthropicResponse format
+      message_id = "msg_bedrock_#{Time.now.to_i}_#{rand(10000)}"
 
       raw_response = {
-        "id" => response.id,
+        "id" => message_id,
         "type" => "message",
-        "role" => output.role,
-        "content" => Array(output.content).map { |blk| bedrock_content_block_to_anthropic_hash(blk) },
+        "role" => message.role,
+        "content" => Array(message.content).map { |blk| bedrock_content_block_to_anthropic_hash(blk) },
         "model" => model_id,
         "stop_reason" => response.stop_reason,
         "usage" => {
@@ -241,13 +247,12 @@ module Langchain::LLM
     end
 
     def bedrock_content_block_to_anthropic_hash(block)
+      # Handle different content block types from AWS Bedrock Converse API
       if block.text
         {"type" => "text", "text" => block.text}
       elsif block.tool_use
         tu = block.tool_use
         {"type" => "tool_use", "id" => tu.tool_use_id, "name" => tu.name, "input" => tu.input || {}}
-      else
-        {"type" => "text", "text" => ""}
       end
     end
 

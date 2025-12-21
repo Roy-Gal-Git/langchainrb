@@ -12,20 +12,24 @@ RSpec.describe Langchain::LLM::AwsBedrockConverse do
   describe "#chat" do
     it "calls Bedrock converse and returns an AnthropicResponse" do
       # Create mocks that match the AWS SDK response structure
+      # See: https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html
+      # response.output.message contains role and content
       text_block = double("text_block")
       allow(text_block).to receive(:text).and_return("Hello from Bedrock")
       allow(text_block).to receive(:tool_use).and_return(nil)
 
+      message = double("message")
+      allow(message).to receive(:role).and_return("assistant")
+      allow(message).to receive(:content).and_return([text_block])
+
       output = double("output")
-      allow(output).to receive(:role).and_return("assistant")
-      allow(output).to receive(:content).and_return([text_block])
+      allow(output).to receive(:message).and_return(message)
 
       usage = double("usage")
       allow(usage).to receive(:input_tokens).and_return(3)
       allow(usage).to receive(:output_tokens).and_return(5)
 
       response = double("response")
-      allow(response).to receive(:id).and_return("msg_123")
       allow(response).to receive(:output).and_return(output)
       allow(response).to receive(:stop_reason).and_return("end_turn")
       allow(response).to receive(:usage).and_return(usage)
